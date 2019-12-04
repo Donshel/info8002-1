@@ -10,9 +10,11 @@ size = 2 ** 10
 
 # Methods
 def address(host):
+    '''Returns the address associated to a host.'''
     return 'http://127.0.0.1:{:d}/'.format(host)
 
 def contact(url, msg='', timeout=0.1):
+    '''Returns the response of a get request.'''
     try:
         resp = requests.get(url, timeout=timeout)
 
@@ -24,6 +26,7 @@ def contact(url, msg='', timeout=0.1):
         raise ConnectionError(msg)
 
 def hash(x):
+    '''Hashes a string or integer.'''
     return int(int.from_bytes(sha1(str(x).encode()).digest(), 'big') % size)
 
 # Node class
@@ -31,12 +34,14 @@ class DHTNode(object):
     # Static methods
     @staticmethod
     def distance(a, b):
+        '''Computes the oriented distance between two keys.'''
         if a > b:
             return size - DHTNode.distance(b, a)
         return b - a
 
     @staticmethod
     def between(a, b, c):
+        '''States whether \'b\' is within the interval \'[a, b]\'.'''
         return (a == c) or (b != a and DHTNode.distance(a, b) + DHTNode.distance(b, c) == DHTNode.distance(a, c))
 
     # Class methods
@@ -53,6 +58,7 @@ class DHTNode(object):
         self.lock = Lock()
 
     def join(self, boot):
+        '''Joins a network through a bootstrap node.'''
         # Ping boot
         url = address(boot)
         contact(url)
@@ -99,25 +105,32 @@ class DHTNode(object):
             pass
 
     def update_predecessor(self, host):
+        '''Updates predecessor.'''
         self.predecessor = (hash(host), host)
         self.host_table[self.predecessor[0]] = self.predecessor[1]
 
     def update_successor(self, host):
+        '''Updates successor.'''
         self.successor = (hash(host), host)
         self.host_table[self.successor[0]] = self.successor[1]
 
     def lookup(self, key):
+        '''Looks up the successor of a given key.'''
         if DHTNode.between(self.predecessor[0], key, self.id):
+            # self is the key's successor
             chain = []
         elif DHTNode.between(self.id, key, self.successor[0]):
+            # self.successor is the key's successor
             try:
                 url = address(self.successor[1])
                 resp = contact(url)
 
                 chain = [self.successor[1]]
             except:
+                # self.successor has crashed
                 chain = [None]
         else:
+            # The nearest is the key's successor
             while True:
                 id, host = min(
                     self.host_table.items(),
@@ -131,6 +144,7 @@ class DHTNode(object):
                     chain = json.loads(resp)
                 except:
                     if host == self.successor[1]:
+                        # self.successor has crashed
                         chain = [None]
                     else:
                         del self.host_table[id]
@@ -146,9 +160,11 @@ class DHTNode(object):
         return chain + [self.host]
 
     def exists(self, path):
+        '''Checks whether a value is stored at a path.'''
         return self.get(path) is not None
 
     def get(self, path):
+        '''Returns the value stored at a path.'''
         path = str(path)
         key = hash(path)
 
@@ -158,6 +174,7 @@ class DHTNode(object):
             return None
 
     def put(self, path, value):
+        '''Stores a value at a path.'''
         path = str(path)
         key = hash(path)
 
@@ -170,9 +187,11 @@ class DHTNode(object):
             self.hash_table[key] = [(path, value)]
 
     def content(self, a, b):
+        '''Returns all values stored within a key interval.'''
         return dict([i for i in self.hash_table.items() if DHTNode.between(a, i[0], b)])
 
     def delete(self, a, b):
+        '''Deletes all values stored within a key interval.'''
         self.hash_table = dict(
             [i for i in self.hash_table.items() if not DHTNode.between(a, i[0], b)]
         )

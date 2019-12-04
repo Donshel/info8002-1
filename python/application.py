@@ -13,11 +13,12 @@ app = Flask(__name__)
 
 @app.before_first_request
 def bootstrap():
+    '''Bootstraps the internal node.'''
     global node
-
     node = DHTNode(port)
 
     if port != boot:
+        # Join the network
         try:
             with node.lock:
                 node.join(boot)
@@ -26,15 +27,18 @@ def bootstrap():
 
 @app.route('/shutdown')
 def shutdown():
+    '''Shutdowns the application.'''
     request.environ.get('werkzeug.server.shutdown')()
     return 'Server shutting down.'
 
 @app.route('/')
 def ping():
+    '''Hello, World!'''
     return 'Hello, World!', 200
 
 @app.route('/state')
 def state():
+    '''Returns the current state of the internal node.'''
     state = {
         'host': node.host,
         'id': node.id,
@@ -48,10 +52,12 @@ def state():
 
 @app.route('/predecessor')
 def predecessor():
+    '''Returns the predecessor of the internal node.'''
     return jsonify(node.predecessor[1]), 200
 
 @app.route('/update_predecessor/<host>')
 def update_predecessor(host):
+    '''Updates the predecessor of the internal node.'''
     try:
         with node.lock:
             node.update_predecessor(int(host))
@@ -62,6 +68,7 @@ def update_predecessor(host):
 
 @app.route('/update_successor/<host>')
 def update_successor(host):
+    '''Updates the successor of the internal node.'''
     try:
         with node.lock:
             node.update_successor(int(host))
@@ -72,6 +79,7 @@ def update_successor(host):
 
 @app.route('/lookup/<key>')
 def lookup(key):
+    '''Looks up the successor of a key.'''
     try:
         return jsonify(node.lookup(int(key))), 200
     except Exception as e:
@@ -80,6 +88,7 @@ def lookup(key):
 @app.route('/exists/<path>')
 @app.route('/exists/<path>/<n>')
 def exists(path, n=replication):
+    '''Checks whether a value is stored at a path.'''
     path = str(path)
     key = hash(path)
     n = int(n)
@@ -87,17 +96,21 @@ def exists(path, n=replication):
     try:
         assert n > 0, 'n should be strictly positive.'
 
+        # Lookup successor of 'key'
         host = node.lookup(key)[0]
 
         if host == None:
             if n > 1:
+                # Start again with 'hash(path)'
                 return exists(key, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         elif host == node.host:
+            # Request internal node
             with node.lock:
                 return jsonify(node.exists(path)), 200
         else:
+            # Request external node
             url = address(host) + 'exists/{}/{:d}'.format(path, n)
             resp = requests.get(url)
 
@@ -108,6 +121,7 @@ def exists(path, n=replication):
 @app.route('/get/<path>')
 @app.route('/get/<path>/<n>')
 def get(path, n=replication):
+    '''Returns the value stored at a path.'''
     path = str(path)
     key = hash(path)
     n = int(n)
@@ -115,22 +129,26 @@ def get(path, n=replication):
     try:
         assert n > 0, 'n should be strictly positive.'
 
+        # Lookup successor of 'key'
         host = node.lookup(key)[0]
 
         if host == None:
             if n > 1:
+                # Start again with 'hash(path)'
                 return get(key, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         if host == node.host:
+            # Request internal node
             with node.lock:
                 value = node.get(path)
 
             if value is None:
-                return 'No value stored with path {}.'.format(path), 404
+                return 'No value stored at path {}.'.format(path), 404
 
             return jsonify(value), 200
         else:
+            # Request external node
             url = address(host) + 'get/{}/{:d}'.format(path, n)
             resp = requests.get(url)
 
@@ -141,6 +159,7 @@ def get(path, n=replication):
 @app.route('/put/<path>', methods=['POST', 'PUT'])
 @app.route('/put/<path>/<n>', methods=['POST', 'PUT'])
 def put(path, n=replication):
+    '''Stores a value at a path.'''
     path = str(path)
     key = hash(path)
     value = request.get_json()
@@ -149,22 +168,27 @@ def put(path, n=replication):
     try:
         assert n > 0, 'n should be strictly positive.'
 
+        # Lookup successor of 'key'
         host = node.lookup(key)[0]
 
         if host == None:
             if n > 1:
+                # Start again with 'hash(path)'
                 return put(key, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         if host == node.host:
+            # Request internal node
             with node.lock:
                 node.put(path, value)
 
             if n > 1:
+                # Start again with 'hash(path)'
                 put(key, n - 1)
 
-            return 'Value successfully stored with path {}.'.format(path), 200
+            return 'Value successfully stored at path {}.'.format(path), 200
         else:
+            # Request external node
             url = address(host) + 'put/{}/{:d}'.format(path, n)
             resp = requests.post(url, json=value)
 
@@ -174,13 +198,16 @@ def put(path, n=replication):
 
 @app.route('/copy/<src>/<dst>')
 def copy(src, dst):
+    '''Copies the value at a path to another.'''
     try:
+        # Get value with path 'src'
         url = address(node.host) + 'get/{}'.format(src)
         resp = requests.get(url)
 
         if resp.status_code != 200:
             return resp.text, resp.status_code
 
+        # Put value with path 'dst'
         url = address(node.host) + 'put/{}'.format(dst)
         resp = requests.post(url, json=json.loads(resp.text))
 
@@ -190,7 +217,9 @@ def copy(src, dst):
 
 @app.route('/content/<a>/<b>')
 def content(a, b):
+    '''Returns all values stored within a key interval in the internal node.'''
     try:
+        # Get content 
         with node.lock:
             return jsonify(node.content(int(a), int(b))), 200
     except Exception as e:
@@ -198,6 +227,7 @@ def content(a, b):
 
 @app.route('/delete/<a>/<b>')
 def delete(a, b):
+    '''Deletes all values stored within an interval in the internal node.'''
     try:
         with node.lock:
             node.delete(int(a), int(b))
