@@ -77,9 +77,8 @@ def lookup(key):
 @app.route('/exists/<path>/<n>')
 def exists(path, n=replication):
     '''Checks whether a value is stored at a path.'''
-    path = str(path)
-    key = hash(path)
-    n = int(n)
+    n = min(int(n), replication)
+    key = hash(path, replication - n + 1)
 
     try:
         assert n > 0, 'n should be strictly positive.'
@@ -89,14 +88,13 @@ def exists(path, n=replication):
 
         if host == None:
             if n > 1:
-                # Start again with 'hash(path)'
-                return exists(key, n - 1)
+                return exists(path, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         elif host == node.host:
             # Request internal node
             with node.lock:
-                return jsonify(node.exists(path)), 200
+                return jsonify(node.exists(key, path)), 200
         else:
             # Request external node
             url = address(host) + 'exists/{}/{:d}'.format(path, n)
@@ -110,9 +108,8 @@ def exists(path, n=replication):
 @app.route('/get/<path>/<n>')
 def get(path, n=replication):
     '''Returns the value stored at a path.'''
-    path = str(path)
-    key = hash(path)
-    n = int(n)
+    n = min(int(n), replication)
+    key = hash(path, replication - n + 1)
 
     try:
         assert n > 0, 'n should be strictly positive.'
@@ -122,14 +119,13 @@ def get(path, n=replication):
 
         if host == None:
             if n > 1:
-                # Start again with 'hash(path)'
-                return get(key, n - 1)
+                return get(path, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         if host == node.host:
             # Request internal node
             with node.lock:
-                value = node.get(path)
+                value = node.get(key, path)
 
             if value is None:
                 return 'No value stored at path {}.'.format(path), 404
@@ -148,10 +144,9 @@ def get(path, n=replication):
 @app.route('/put/<path>/<n>', methods=['POST', 'PUT'])
 def put(path, n=replication):
     '''Stores a value at a path.'''
-    path = str(path)
-    key = hash(path)
+    n = min(int(n), replication)
+    key = hash(path, replication - n + 1)
     value = request.get_json()
-    n = int(n)
 
     try:
         assert n > 0, 'n should be strictly positive.'
@@ -162,17 +157,17 @@ def put(path, n=replication):
         if host == None:
             if n > 1:
                 # Start again with 'hash(path)'
-                return put(key, n - 1)
+                return put(path, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
         if host == node.host:
             # Request internal node
             with node.lock:
-                node.put(path, value)
+                node.put(key, path, value)
 
             if n > 1:
                 # Start again with 'hash(path)'
-                put(key, n - 1)
+                put(path, n - 1)
 
             return 'Value successfully stored at path {}.'.format(path), 200
         else:

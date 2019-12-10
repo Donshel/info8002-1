@@ -26,9 +26,12 @@ def contact(url, msg='', timeout=0.1):
     except:
         raise ConnectionError(msg)
 
-def hash(x):
+def hash(x, n=1):
     '''Hashes a string or integer.'''
-    return int(int.from_bytes(sha1(str(x).encode()).digest(), 'big') % size)
+    if n == 0:
+        return x
+    else:
+        return int(int.from_bytes(sha1(str(hash(x, n - 1)).encode()).digest(), 'big') % size)
 
 # Node class
 class DHTNode(object):
@@ -141,28 +144,22 @@ class DHTNode(object):
 
         return chain + [self.host]
 
-    def exists(self, path):
+    def exists(self, key, path):
         '''Checks whether a value is stored at a path.'''
-        return self.get(path) is not None
+        return self.get(key, path) is not None
 
-    def get(self, path):
+    def get(self, key, path):
         '''Returns the value stored at a path.'''
-        path = str(path)
-        key = hash(path)
-
         try:
             return next(i[1] for i in self.hash_table[key] if i[0] == path)
         except:
             return None
 
-    def put(self, path, value):
+    def put(self, key, path, value):
         '''Stores a value at a path.'''
-        path = str(path)
-        key = hash(path)
-
         if key in self.hash_table:
-            if self.exists(path):
-                raise KeyError('Value already stored with path {}.'.format(path))
+            if self.exists(key, path):
+                raise KeyError('Value already stored at key {:d} and path {}.'.format(key, path))
             else:
                 self.hash_table[key].append((path, value))
         else:
