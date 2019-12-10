@@ -6,12 +6,13 @@ from hashlib import sha1
 from threading import Lock
 
 # Parameters
-size = 2 ** 10
+m = 10
+size = 2 ** m
 
 # Methods
 def address(host):
     '''Returns the address associated to a host.'''
-    return 'http://127.0.0.1:{:d}/'.format(host)
+    return 'http://{}/'.format(host)
 
 def contact(url, msg='', timeout=0.1):
     '''Returns the response of a get request.'''
@@ -34,7 +35,7 @@ class DHTNode(object):
     # Static methods
     @staticmethod
     def distance(a, b):
-        '''Computes the oriented distance between two keys.'''
+        '''Computes the clockwise distance between two keys.'''
         if a > b:
             return size - DHTNode.distance(b, a)
         return b - a
@@ -50,7 +51,6 @@ class DHTNode(object):
         self.id = hash(self.host)
 
         self.predecessor = (self.id, self.host)
-        self.successor = (self.id, self.host)
 
         self.host_table = {}
         self.hash_table = {}
@@ -66,32 +66,28 @@ class DHTNode(object):
         # Lookup successor
         url = address(boot) + 'lookup/{:d}'.format(self.id)
         resp = contact(url)
-        successor = json.loads(resp)[0]
+        chain = json.loads(resp)
 
-        # Search predecessor
+        successor = chain[0]
+        if hash(successor) == self.id:
+            raise Exception
+
+        self.improve(chain)
+
+        # Get predecessor
         url = address(successor) + 'predecessor'
         resp = contact(url)
         predecessor = json.loads(resp)
 
-        # Update successor and predecessor
+        # Update predecessor
         self.update_predecessor(predecessor)
-        self.update_successor(successor)
-
-        # Inform predecessor
-        url = address(predecessor) + 'update_successor/{:d}'.format(self.host)
-        contact(url)
 
         # Inform successor
-        try:
-            url = address(successor) + 'update_predecessor/{:d}'.format(self.host)
-            contact(url)
-        except:
-            # Revert predecessor
-            url = address(predecessor) + 'update_successor/{:d}'.format(successor)
-            contact(url)
+        url = address(successor) + 'update_predecessor/{}'.format(self.host)
+        contact(url)
 
         # Take space domain responsibility
-        url = address(successor) + 'content/{:d}/{:d}'.format(hash(predecessor), self.id)
+        url = address(successor) + 'content/{:d}/{:d}'.format(self.predecessor[0], self.id)
         resp = contact(url)
 
         content = json.loads(resp)
@@ -99,42 +95,31 @@ class DHTNode(object):
             self.hash_table[int(key)] = values
 
         try:
-            url = address(successor) + 'delete/{:d}/{:d}'.format(hash(predecessor), self.id)
+            url = address(successor) + 'delete/{:d}/{:d}'.format(self.predecessor[0], self.id)
             contact(url)
         except:
             pass
 
+    def improve(self, chain):
+        '''Improves internal representation of the network.'''
+        for host in chain:
+            if host is not None:
+                self.host_table[hash(host)] = host
+
     def update_predecessor(self, host):
         '''Updates predecessor.'''
         self.predecessor = (hash(host), host)
-        self.host_table[self.predecessor[0]] = self.predecessor[1]
-
-    def update_successor(self, host):
-        '''Updates successor.'''
-        self.successor = (hash(host), host)
-        self.host_table[self.successor[0]] = self.successor[1]
+        self.improve([host])
 
     def lookup(self, key):
         '''Looks up the successor of a given key.'''
         if DHTNode.between(self.predecessor[0], key, self.id):
-            # self is the key's successor
             chain = []
-        elif DHTNode.between(self.id, key, self.successor[0]):
-            # self.successor is the key's successor
-            try:
-                url = address(self.successor[1])
-                resp = contact(url)
-
-                chain = [self.successor[1]]
-            except:
-                # self.successor has crashed
-                chain = [None]
         else:
-            # The nearest is the key's successor
             while True:
                 id, host = min(
                     self.host_table.items(),
-                    key=lambda x: DHTNode.distance(x[0], key)
+                    key=lambda x: DHTNode.distance(key, x[0])
                 )
 
                 try:
@@ -143,8 +128,8 @@ class DHTNode(object):
 
                     chain = json.loads(resp)
                 except:
-                    if host == self.successor[1]:
-                        # self.successor has crashed
+                    if host == self.predecessor[1]:
+                        # self.predecessor has crashed
                         chain = [None]
                     else:
                         del self.host_table[id]
@@ -152,10 +137,7 @@ class DHTNode(object):
 
                 break
 
-        # Improve internal representation of the network
-        for host in chain:
-            if host is not None:
-                self.host_table[hash(host)] = host
+            self.improve(chain)
 
         return chain + [self.host]
 

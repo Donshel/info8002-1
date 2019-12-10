@@ -15,9 +15,9 @@ app = Flask(__name__)
 def bootstrap():
     '''Bootstraps the internal node.'''
     global node
-    node = DHTNode(port)
+    node = DHTNode(request.host)
 
-    if port != boot:
+    if node.host != boot:
         # Join the network
         try:
             with node.lock:
@@ -43,7 +43,6 @@ def state():
         'host': node.host,
         'id': node.id,
         'predecessor': node.predecessor,
-        'successor': node.successor,
         'host_table': node.host_table,
         'hash_table': node.hash_table
     }
@@ -60,20 +59,9 @@ def update_predecessor(host):
     '''Updates the predecessor of the internal node.'''
     try:
         with node.lock:
-            node.update_predecessor(int(host))
+            node.update_predecessor(host)
 
         return 'Predecessor updated to {}.'.format(host), 200
-    except Exception as e:
-        return str(e), 500
-
-@app.route('/update_successor/<host>')
-def update_successor(host):
-    '''Updates the successor of the internal node.'''
-    try:
-        with node.lock:
-            node.update_successor(int(host))
-
-        return 'Successor updated to {}.'.format(host), 200
     except Exception as e:
         return str(e), 500
 
@@ -242,7 +230,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     parser.add_argument('-p', '--port', type=int, default=5000)
-    parser.add_argument('-b', '--boot', type=int, default=5000)
+    parser.add_argument('-b', '--boot', type=str, default='127.0.0.1:5000')
 
     args = parser.parse_args()
 
