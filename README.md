@@ -6,7 +6,99 @@ Project realized under the direction of [**Joeri Hermans**](https://github.com/J
 
 The developed framework is an *altered* version of [Chord](https://en.wikipedia.org/wiki/Chord_(peer-to-peer)). It has been implemented using mainly [Flask](https://github.com/pallets/flask) and [Requests](https://github.com/psf/requests) Python libraries.
 
-### Concept
+### Requirements
+
+```txt
+certifi==2019.11.28
+chardet==3.0.4
+Click==7.0
+Flask==1.1.1
+idna==2.8
+itsdangerous==1.1.0
+Jinja2==2.10.3
+MarkupSafe==1.1.1
+requests==2.22.0
+urllib3==1.25.7
+Werkzeug==0.16.0
+```
+
+### Boot
+
+In order to initialize a node, one shall call the following command
+```bash
+python python/application.py -p $PORT -b $BOOT
+```
+where `$PORT` is the port of the new node and `$BOOT` the ip address of a node in a network. By default, the former is set to `5000` and the later to `127.0.0.1:5000`. If `127.0.0.1:$PORT == $BOOT`, the node starts a new network.
+
+> A node isn't activated until it receives its first request.
+
+To communicate with the network, one can use the [curl](https://curl.haxx.se/) library.
+
+### Interface
+
+Among others, the framework presents the `exists`, `get`, `put`, `remove`, `copy`, `list` and `shutdown` requests.
+
+* `exists(path)` checks whether a value is stored at path `path` (`True` or `False`).
+* `get(path)` returns the value stored, if any, at path `path`.
+* `put(path, value)` stores the value `value` at path `path`, if unused.
+* `remove(path)` removes the value stored, if any, at path `path`.
+* `copy(src, dst)` copies the value stored, if any, at path `src` to path `dst`, if unused.
+* `list()` lists all occupied paths in the system.
+* `shudown()` shuts down a process. Could be used to simulate the crash of a process.
+
+```bash
+curl http://127.0.0.1:$PORT/exists/$PATH
+curl http://127.0.0.1:$PORT/get/$PATH
+curl http://127.0.0.1:$PORT/put/$PATH -X POST --data $VALUE --header 'Content-Type: application/json'
+curl http://127.0.0.1:$PORT/remove/$PATH
+curl http://127.0.0.1:$PORT/copy/$SRC/$DST
+curl http://127.0.0.1:$PORT/list
+curl http://127.0.0.1:$PORT/shutdown
+```
+> The argument `--header 'Content-Type: application/json'` is mandatory.
+
+### Example
+
+```bash
+N=5
+
+./bash/boot.sh $N
+./bash/ping.sh $N
+
+curl http://127.0.0.1:5000/put/1 -X POST --data 1 --header 'Content-Type: application/json' > log.txt
+curl http://127.0.0.1:5001/put/2 -X POST --data 2 --header 'Content-Type: application/json' >> log.txt
+curl http://127.0.0.1:5002/put/3 -X POST --data 3 --header 'Content-Type: application/json' >> log.txt
+
+curl http://127.0.0.1:5003/exists/1 >> log.txt
+curl http://127.0.0.1:5004/get/2 >> log.txt
+curl http://127.0.0.1:5000/copy/3/4 >> log.txt
+
+curl http://127.0.0.1:5001/remove/3 >> log.txt
+curl http://127.0.0.1:5002/shutdown >> log.txt
+
+curl http://127.0.0.1:5003/get/3 >> log.txt
+curl http://127.0.0.1:5004/exists/4 >> log.txt
+
+curl http://127.0.0.1:5000/list >> log.txt
+
+./bash/shut.sh $N
+```
+
+```
+Value successfully stored at path 1.
+Value successfully stored at path 2.
+Value successfully stored at path 3.
+true
+2
+Value successfully stored at path 4.
+Value successfully removed from path 3.
+Server shutting down.
+No value stored at path 3.
+true
+["1","2","4"]
+```
+
+## Concept
 
 As the regular Chord protocol, this version organizes the participating nodes in an *orverlay network*, where each node (machine) is responsible for a set of keys defined as `m`-bit identifiers. The overlay network is arranged in an *identifier circle* ranging from `0` to `2^m - 1`. The position (or identifier) `n` of a node on this circle is chosen by *hashing* the node IP address.
 
@@ -64,17 +156,21 @@ Therefore, if the node responsible of the key `hash(path)` crashes, the value is
 
 In the actual implementation, it has been chosen to replicate `3` times each file. The system is therefore resilitant to up to `2` faulty processes. However, because the hashing process is unpredictable, it is possible, yet very unlikely, that all copies of the file are under the responsibility of the same node.
 
-### Implementation of special requests
+### Requests implementation
 
-* The `remove` request is implemented in the same manner as `put` : the function finds recursively the location (the key) of replicates and remove each of them.
+* `exists`, `get`, `put` and `remove` execute a `lookup` for key `k`. If `successor(k)` 
+    1. is `self`, transmit the request to the internal node. For `exist` or `get`, return the answer, for `put` and `remove`, update `k` to `hash(k)` and start again.
+    2. hasn't crashed, transmit the request to it.
+    3. has crashed, update `k` to `hash(k)` and start again.
 
-* When `list` is requested to a node, this node tries to contact every single node in the network to gather their content. Contacting every nodes is achieved through an iterative version of the *Depth-first search* algorithm and each time a new node is reached, its content is retrieved.
+* `list` contacts every nodes in the network through an iterative version of the *Depth-first search* algorithm. Each time a new node is reached, its content is retrieved.
 
     ```python
     def list():
         stack = Stack(self.network)
         visited = Set(self)
         content = List(self.content)
+
         while not empty(stack):
             node = stack.pop()
 
@@ -89,55 +185,12 @@ In the actual implementation, it has been chosen to replicate `3` times each fil
         return content
     ```
 
-## Run
+## Performance assessment
 
-### Requirements
+The scripts [`eval.sh`](eval/eval.sh) and [`eval.py`](eval/eval.py) have been used to evaluate the complexity of the lookup mechanism and the memory space used by the internal network representations.
 
-```txt
-certifi==2019.11.28
-chardet==3.0.4
-Click==7.0
-Flask==1.1.1
-idna==2.8
-itsdangerous==1.1.0
-Jinja2==2.10.3
-MarkupSafe==1.1.1
-requests==2.22.0
-urllib3==1.25.7
-Werkzeug==0.16.0
-```
+![lookup](eval/products/png/lookup.png)
+> Average number of sub-requests per lookup with respect to the number of nodes in the network.
 
-### Boot
-
-In order to initialize a node, one shall call the following command
-```bash
-python python/application.py -p $PORT -b $BOOT
-```
-where `$PORT` is the port of the new node and `$BOOT` the ip address of a node in a network. By default, the former is set to `5000` and the later to `127.0.0.1:5000`. If `127.0.0.1:$PORT == $BOOT`, the node starts a new network.
-
-> A node isn't activated until it receives its first request.
-
-To communicate with the network, one can use the [curl](https://curl.haxx.se/) library.
-
-### Interface
-
-Among others, the framework presents the `exists`, `get`, `put`, `remove`, `copy`, `list` and `shutdown` requests.
-
-* `exists(path)` checks whether a value is stored at path `path` (`True` or `False`).
-* `get(path)` returns the value stored, if any, at path `path`.
-* `put(path, value)` stores the value `value` at path `path`, if unused.
-* `remove(path)` removes the value stored, if any, at path `path`.
-* `copy(src, dst)` copies the value stored, if any, at path `src` to path `dst`, if unused.
-* `list()` lists all occupied paths in the system.
-* `shudown()` shuts down a process. Could be used to simulate the crash of a process.
-
-```bash
-curl http://127.0.0.1:$PORT/exists/$PATH
-curl http://127.0.0.1:$PORT/get/$PATH
-curl http://127.0.0.1:$PORT/put/$PATH -X POST --data $VALUE --header 'Content-Type: application/json'
-curl http://127.0.0.1:$PORT/remove/$PATH
-curl http://127.0.0.1:$PORT/copy/$SRC/$DST
-curl http://127.0.0.1:$PORT/list
-curl http://127.0.0.1:$PORT/shutdown
-```
-> The argument `--header 'Content-Type: application/json'` is mandatory.
+![memory](eval/products/png/memory.png)
+> Average number of edges with respect to the number of nodes in the network.

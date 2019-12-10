@@ -29,7 +29,7 @@ def bootstrap():
 def shutdown():
     '''Shutdowns the application.'''
     request.environ.get('werkzeug.server.shutdown')()
-    return 'Server shutting down.'
+    return 'Server shutting down.\n'
 
 @app.route('/')
 def ping():
@@ -61,7 +61,7 @@ def update_predecessor(host):
         with node.lock:
             node.update_predecessor(host)
 
-        return 'Predecessor updated to {}.'.format(host), 200
+        return 'Predecessor updated to {}.\n'.format(host), 200
     except Exception as e:
         return str(e), 500
 
@@ -128,7 +128,7 @@ def get(path, n=replication):
                 value = node.get(key, path)
 
             if value is None:
-                return 'No value stored at path {}.'.format(path), 404
+                return 'No value stored at path {}.\n'.format(path), 404
 
             return jsonify(value), 200
         else:
@@ -168,7 +168,7 @@ def put(path, n=replication):
             if n > 1:
                 put(path, n - 1)
 
-            return 'Value successfully stored at path {}.'.format(path), 200
+            return 'Value successfully stored at path {}.\n'.format(path), 200
         else:
             # Request external node
             url = address(host) + 'put/{}/{:d}'.format(path, n)
@@ -204,7 +204,7 @@ def remove(path, n=replication):
             if n > 1 and value is not None:
                 remove(path, n - 1)
 
-            return 'Value successfully removed from path {}.'.format(path), 200
+            return 'Value successfully removed from path {}.\n'.format(path), 200
         else:
             # Request external node
             url = address(host) + 'remove/{}/{:d}'.format(path, n)
@@ -240,7 +240,7 @@ def delete(a, b):
         with node.lock:
             node.delete(int(a), int(b))
 
-        return 'Content successfully deleted.', 200
+        return 'Content successfully deleted.\n', 200
     except Exception as e:
         return str(e), 500
 
