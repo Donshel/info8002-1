@@ -68,8 +68,7 @@ class DHTNode(object):
 
         # Lookup successor
         url = address(boot) + 'lookup/{:d}'.format(self.id)
-        resp = contact(url)
-        chain = json.loads(resp)
+        chain = json.loads(contact(url))
 
         successor = chain[0]
         if hash(successor) == self.id:
@@ -79,8 +78,7 @@ class DHTNode(object):
 
         # Get predecessor
         url = address(successor) + 'predecessor'
-        resp = contact(url)
-        predecessor = json.loads(resp)
+        predecessor = json.loads(contact(url))
 
         # Update predecessor
         self.update_predecessor(predecessor)
@@ -90,12 +88,13 @@ class DHTNode(object):
         contact(url)
 
         # Take space domain responsibility
-        url = address(successor) + 'content/{:d}/{:d}'.format(self.predecessor[0], self.id)
-        resp = contact(url)
+        url = address(successor) + 'content'
+        content = json.loads(contact(url))
 
-        content = json.loads(resp)
-        for key, values in content.items():
-            self.hash_table[int(key)] = values
+        for key, value in content.items():
+            key = int(key)
+            if DHTNode.between(self.predecessor[0], key, self.id):
+                self.hash_table[key] = value
 
         try:
             url = address(successor) + 'delete/{:d}/{:d}'.format(self.predecessor[0], self.id)
@@ -127,9 +126,7 @@ class DHTNode(object):
 
                 try:
                     url = address(host) + 'lookup/{:d}'.format(key)
-                    resp = contact(url)
-
-                    chain = json.loads(resp)
+                    chain = json.loads(contact(url))
                 except:
                     if host == self.predecessor[1]:
                         # self.predecessor has crashed
@@ -151,9 +148,24 @@ class DHTNode(object):
     def get(self, key, path):
         '''Returns the value stored at a path.'''
         try:
-            return next(i[1] for i in self.hash_table[key] if i[0] == path)
+            for i in self.hash_table[key]:
+                if i[0] == path:
+                    return i[1]
         except:
-            return None
+            pass
+
+        return None
+
+    def pop(self, key, path):
+        '''Pops the value stored at a path.'''
+        try:
+            for i, j in enumerate(self.hash_table[key].copy()):
+                if j[0] == path:
+                    return self.hash_table[key].pop(i)
+        except:
+            pass
+
+        return None
 
     def put(self, key, path, value):
         '''Stores a value at a path.'''
@@ -165,12 +177,8 @@ class DHTNode(object):
         else:
             self.hash_table[key] = [(path, value)]
 
-    def content(self, a, b):
-        '''Returns all values stored within a key interval.'''
-        return dict([i for i in self.hash_table.items() if DHTNode.between(a, i[0], b)])
-
     def delete(self, a, b):
         '''Deletes all values stored within a key interval.'''
         self.hash_table = dict(
-            [i for i in self.hash_table.items() if not DHTNode.between(a, i[0], b)]
+            i for i in self.hash_table.items() if not DHTNode.between(a, i[0], b)
         )

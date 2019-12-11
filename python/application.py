@@ -36,23 +36,23 @@ def ping():
     '''Hello, World!'''
     return 'Hello, World!', 200
 
-@app.route('/state')
-def state():
-    '''Returns the current state of the internal node.'''
-    state = {
-        'host': node.host,
-        'id': node.id,
-        'predecessor': node.predecessor,
-        'host_table': node.host_table,
-        'hash_table': node.hash_table
-    }
-
-    return jsonify(state), 200
-
 @app.route('/predecessor')
 def predecessor():
     '''Returns the predecessor of the internal node.'''
-    return jsonify(node.predecessor[1]), 200
+    with node.lock:
+        return jsonify(node.predecessor[1]), 200
+
+@app.route('/network')
+def network():
+    '''Returns the node's internal representation of the network.'''
+    with node.lock:
+        return jsonify(node.host_table), 200
+
+@app.route('/content')
+def content():
+    '''Returns all values stored within the node.'''
+    with node.lock:
+        return jsonify(node.hash_table), 200
 
 @app.route('/update_predecessor/<host>')
 def update_predecessor(host):
@@ -122,7 +122,7 @@ def get(path, n=replication):
                 return get(path, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
-        if host == node.host:
+        elif host == node.host:
             # Request internal node
             with node.lock:
                 value = node.get(key, path)
@@ -160,13 +160,12 @@ def put(path, n=replication):
                 return put(path, n - 1)
             else:
                 raise KeyError('Unable to access path {}.'.format(path))
-        if host == node.host:
+        elif host == node.host:
             # Request internal node
             with node.lock:
                 node.put(key, path, value)
 
             if n > 1:
-                # Start again with 'hash(path)'
                 put(path, n - 1)
 
             return 'Value successfully stored at path {}.'.format(path), 200
@@ -174,6 +173,42 @@ def put(path, n=replication):
             # Request external node
             url = address(host) + 'put/{}/{:d}'.format(path, n)
             resp = requests.post(url, json=value)
+
+            return resp.text, resp.status_code
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/remove/<path>')
+@app.route('/remove/<path>/<n>')
+def remove(path, n=replication):
+    '''Removes the value stored at a path.'''
+    n = min(int(n), replication)
+    key = hash(path, replication - n + 1)
+
+    try:
+        assert n > 0, 'n should be strictly positive.'
+
+        # Lookup successor of 'key'
+        host = node.lookup(key)[0]
+
+        if host == None:
+            if n > 1:
+                return remove(path, n - 1)
+            else:
+                raise KeyError('Unable to access path {}.'.format(path))
+        elif host == node.host:
+            # Request internal node
+            with node.lock:
+                value = node.pop(key, path)
+
+            if n > 1 and value is not None:
+                remove(path, n - 1)
+
+            return 'Value successfully removed from path {}.'.format(path), 200
+        else:
+            # Request external node
+            url = address(host) + 'remove/{}/{:d}'.format(path, n)
+            resp = requests.get(url)
 
             return resp.text, resp.status_code
     except Exception as e:
@@ -198,16 +233,6 @@ def copy(src, dst):
     except Exception as e:
         return str(e), 500
 
-@app.route('/content/<a>/<b>')
-def content(a, b):
-    '''Returns all values stored within a key interval in the internal node.'''
-    try:
-        # Get content 
-        with node.lock:
-            return jsonify(node.content(int(a), int(b))), 200
-    except Exception as e:
-        return str(e), 500
-
 @app.route('/delete/<a>/<b>')
 def delete(a, b):
     '''Deletes all values stored within an interval in the internal node.'''
@@ -219,6 +244,49 @@ def delete(a, b):
     except Exception as e:
         return str(e), 500
 
+@app.route('/list')
+def ls():
+    '''Lists all occupied paths within the network.'''
+    paths = {j[0] for i in node.hash_table.values() for j in i}
+    visited = {node.id}
+    stack = list(node.host_table.items())
+
+    # Depth-first search
+    while stack:
+        id, host = stack.pop()
+        id = int(id)
+
+        if id in visited:
+            # If already visited
+            continue
+
+        # Add to visited
+        visited.add(id)
+
+        try:
+            # Extend stack
+            url = address(host) + 'network'
+            resp = requests.get(url)
+
+            if resp.status_code != 200:
+                raise ConnectionError
+
+            stack.extend(json.loads(resp.text).items())
+
+            # Gather content
+            url = address(host) + 'content'
+            resp = requests.get(url)
+
+            if resp.status_code != 200:
+                raise ConnectionError
+
+            paths.update(j[0] for i in json.loads(resp.text).values() for j in i)
+        except:
+            pass
+
+    return jsonify(sorted(paths)), 200
+
+# Main
 if __name__ == '__main__':
     from argparse import ArgumentParser
 

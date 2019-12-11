@@ -64,6 +64,31 @@ Therefore, if the node responsible of the key `hash(path)` crashes, the value is
 
 In the actual implementation, it has been chosen to replicate `3` times each file. The system is therefore resilitant to up to `2` faulty processes. However, because the hashing process is unpredictable, it is possible, yet very unlikely, that all copies of the file are under the responsibility of the same node.
 
+### Implementation of special requests
+
+* The `remove` request is implemented in the same manner as `put` : the function finds recursively the location (the key) of replicates and remove each of them.
+
+* When `list` is requested to a node, this node tries to contact every single node in the network to gather their content. Contacting every nodes is achieved through an iterative version of the *Depth-first search* algorithm and each time a new node is reached, its content is retrieved.
+
+    ```python
+    def list():
+        stack = Stack(self.network)
+        visited = Set(self)
+        content = List(self.content)
+        while not empty(stack):
+            node = stack.pop()
+
+            if node in visited:
+                continue
+
+            visited.add(node)
+
+            stack.push(node.network)
+            content.extend(node.content)
+
+        return content
+    ```
+
 ## Run
 
 ### Requirements
@@ -96,17 +121,23 @@ To communicate with the network, one can use the [curl](https://curl.haxx.se/) l
 
 ### Interface
 
-Among others, the framework presents the `exists`, `get`, `put` and `copy` requests (cf. [statement](statement.md)).
+Among others, the framework presents the `exists`, `get`, `put`, `remove`, `copy`, `list` and `shutdown` requests.
 
 * `exists(path)` checks whether a value is stored at path `path` (`True` or `False`).
 * `get(path)` returns the value stored, if any, at path `path`.
 * `put(path, value)` stores the value `value` at path `path`, if unused.
+* `remove(path)` removes the value stored, if any, at path `path`.
 * `copy(src, dst)` copies the value stored, if any, at path `src` to path `dst`, if unused.
+* `list()` lists all occupied paths in the system.
+* `shudown()` shuts down a process. Could be used to simulate the crash of a process.
 
 ```bash
 curl http://127.0.0.1:$PORT/exists/$PATH
 curl http://127.0.0.1:$PORT/get/$PATH
 curl http://127.0.0.1:$PORT/put/$PATH -X POST --data $VALUE --header 'Content-Type: application/json'
+curl http://127.0.0.1:$PORT/remove/$PATH
 curl http://127.0.0.1:$PORT/copy/$SRC/$DST
+curl http://127.0.0.1:$PORT/list
+curl http://127.0.0.1:$PORT/shutdown
 ```
-> The parameter `--header 'Content-Type: application/json'` is mandatory.
+> The argument `--header 'Content-Type: application/json'` is mandatory.
