@@ -4,22 +4,10 @@ Project realized under the direction of [**Joeri Hermans**](https://github.com/J
 
 ## Altered Chord
 
-The developed framework is an *altered* version of [Chord](https://en.wikipedia.org/wiki/Chord_(peer-to-peer)). It has been implemented using mainly [Flask](https://github.com/pallets/flask) and [Requests](https://github.com/psf/requests) Python libraries.
+The developed framework is an *altered* version of [Chord](https://en.wikipedia.org/wiki/Chord_(peer-to-peer)). It has been implemented using [Flask](https://github.com/pallets/flask), [Requests](https://github.com/psf/requests) and a few other Python libraries.
 
-### Requirements
-
-```txt
-certifi==2019.11.28
-chardet==3.0.4
-Click==7.0
-Flask==1.1.1
-idna==2.8
-itsdangerous==1.1.0
-Jinja2==2.10.3
-MarkupSafe==1.1.1
-requests==2.22.0
-urllib3==1.25.7
-Werkzeug==0.16.0
+```bash
+pip install -r requirements.txt
 ```
 
 ### Boot
